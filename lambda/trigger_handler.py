@@ -24,7 +24,7 @@ def lambda_handler(event, context):
         # Check if the object exists
         s3_client.head_object(Bucket=bucket, Key=decoded_key)
         
-        pdf_file_path = f'/tmp/{decoded_key.split("/")[-1]}'  # Ensure file name is safe for file system
+        pdf_file_path = f'/tmp/{decoded_key.split("/")[-1]}'  
         s3_client.download_file(bucket, decoded_key, pdf_file_path)
         
         
