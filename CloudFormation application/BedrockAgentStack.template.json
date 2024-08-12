@@ -1,0 +1,858 @@
+{
+ "Resources": {
+  "BedrockAgentRole7C982E0C": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "bedrock.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Policies": [
+     {
+      "PolicyDocument": {
+       "Statement": [
+        {
+         "Action": "bedrock:InvokeModel",
+         "Effect": "Allow",
+         "Resource": "arn:aws:bedrock:us-west-2::foundation-model/anthropic.claude-3-opus-20240229-v1:0",
+         "Sid": "AmazonBedrockAgentBedrockFoundationModelPolicyProd"
+        }
+       ],
+       "Version": "2012-10-17"
+      },
+      "PolicyName": "FoundationModelPolicy"
+     }
+    ],
+    "RoleName": "AmazonBedrockExecutionRoleForAgents_agent_test"
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/BedrockAgentRole/Resource"
+   }
+  },
+  "BedrockAgentLambdaFunctionRole497A6623": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Policies": [
+     {
+      "PolicyDocument": {
+       "Statement": [
+        {
+         "Action": [
+          "logs:CreateLogGroup",
+          "logs:CreateLogStream",
+          "logs:PutLogEvents"
+         ],
+         "Effect": "Allow",
+         "Resource": "*"
+        }
+       ],
+       "Version": "2012-10-17"
+      },
+      "PolicyName": "LambdaLoggingPolicy"
+     }
+    ],
+    "RoleName": "BedrockAgentLambdaFunctionRole"
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/BedrockAgentLambdaFunctionRole/Resource"
+   }
+  },
+  "ActionGroupFunctionFE14D1CB": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": {
+      "Fn::Sub": "isda-cdm-bedrockagent"
+     },
+     "S3Key": "lambdafunctions.zip"
+    },
+    "Handler": "action_group.lambda_handler",
+    "Role": {
+     "Fn::GetAtt": [
+      "BedrockAgentLambdaFunctionRole497A6623",
+      "Arn"
+     ]
+    },
+    "Runtime": "python3.12",
+    "Timeout": 60
+   },
+   "DependsOn": [
+    "BedrockAgentLambdaFunctionRole497A6623"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/ActionGroupFunction/Resource",
+    "aws:asset:path": "asset.ff001abd9a058deb2e509df45f157f0bcf6880fb1034a6a2e8928aba2d272518",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "ActionGroupFunctionAllowBedrockInvoke858CB725": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "ActionGroupFunctionFE14D1CB",
+      "Arn"
+     ]
+    },
+    "Principal": "bedrock.amazonaws.com"
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/ActionGroupFunction/AllowBedrockInvoke"
+   }
+  },
+  "BedrockAgent": {
+   "Type": "AWS::Bedrock::Agent",
+   "Properties": {
+    "ActionGroups": [
+     {
+      "ActionGroupExecutor": {
+       "Lambda": {
+        "Fn::GetAtt": [
+         "ActionGroupFunctionFE14D1CB",
+         "Arn"
+        ]
+       }
+      },
+      "ActionGroupName": "MyActionGroup",
+      "Description": "Contains multiple functions with CDM json generation rules for these clauses: Base Currency, Eligible Currency, Rounding, Minimum Transfer Amount, Threshold.",
+      "FunctionSchema": {
+       "Functions": [
+        {
+         "Description": "Rules for CDM json generation for Base Currency and Eligible Currency are present here. Contains details of Base Currency and Eligible Currency clauses' variants and their Common Domain Model (CDM) JSON representations.",
+         "Name": "Currency_clause"
+        },
+        {
+         "Description": "Rules for CDM json generation for rounding clause are present here. Contains details of the Rounding clause variants and their Common Domain Model (CDM) JSON representations.",
+         "Name": "Rounding_clause"
+        },
+        {
+         "Description": "Rules for CDM json generation for Minimum Transfer Amount clause are present here. Contains details of the Minimum Transfer Amount clause variants and their Common Domain Model (CDM) JSON representations.",
+         "Name": "Minimum_Transfer_Amount_clause"
+        },
+        {
+         "Description": "Rules for CDM json generation for Threshold  clause are present here. Contains details of the Threshold clause variants and their Common Domain Model (CDM) JSON representations.",
+         "Name": "Threshold_clause"
+        }
+       ]
+      }
+     }
+    ],
+    "AgentName": "CDM-Genaration-Agent",
+    "AgentResourceRoleArn": {
+     "Fn::GetAtt": [
+      "BedrockAgentRole7C982E0C",
+      "Arn"
+     ]
+    },
+    "AutoPrepare": false,
+    "Description": "Clause CDM processing agent",
+    "FoundationModel": "anthropic.claude-3-opus-20240229-v1:0",
+    "IdleSessionTTLInSeconds": 600,
+    "Instruction": "You are an agent who reads through the ISDA master agreements. When asked about clause names, you will identify the clauses, classify them, and generate their individual Common Domain Model (CDM) JSON outputs. Always follow the CDM JSON generation rules provided in the action group functions.",
+    "SkipResourceInUseCheckOnDelete": false
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/BedrockAgent"
+   }
+  },
+  "MyCfnAgentAlias": {
+   "Type": "AWS::Bedrock::AgentAlias",
+   "Properties": {
+    "AgentAliasName": "agentAlias",
+    "AgentId": {
+     "Fn::GetAtt": [
+      "BedrockAgent",
+      "AgentId"
+     ]
+    },
+    "Description": "This is the alias for CDM-Generation-Agent"
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/MyCfnAgentAlias"
+   }
+  },
+  "mapdfinputbucket0A2E139C": {
+   "Type": "AWS::S3::Bucket",
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/ma-pdf-input-bucket/Resource"
+   }
+  },
+  "mapdfinputbucketNotifications084017D0": {
+   "Type": "Custom::S3BucketNotifications",
+   "Properties": {
+    "ServiceToken": {
+     "Fn::GetAtt": [
+      "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691",
+      "Arn"
+     ]
+    },
+    "BucketName": {
+     "Ref": "mapdfinputbucket0A2E139C"
+    },
+    "NotificationConfiguration": {
+     "LambdaFunctionConfigurations": [
+      {
+       "Events": [
+        "s3:ObjectCreated:*"
+       ],
+       "Filter": {
+        "Key": {
+         "FilterRules": [
+          {
+           "Name": "suffix",
+           "Value": ".pdf"
+          }
+         ]
+        }
+       },
+       "LambdaFunctionArn": {
+        "Fn::GetAtt": [
+         "TriggerFunction15E6AA91",
+         "Arn"
+        ]
+       }
+      }
+     ]
+    },
+    "Managed": true
+   },
+   "DependsOn": [
+    "mapdfinputbucketAllowBucketNotificationsToBedrockAgentStackTriggerFunctionD501D037EA91F950"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/ma-pdf-input-bucket/Notifications/Resource"
+   }
+  },
+  "mapdfinputbucketAllowBucketNotificationsToBedrockAgentStackTriggerFunctionD501D037EA91F950": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "TriggerFunction15E6AA91",
+      "Arn"
+     ]
+    },
+    "Principal": "s3.amazonaws.com",
+    "SourceAccount": {
+     "Ref": "AWS::AccountId"
+    },
+    "SourceArn": {
+     "Fn::GetAtt": [
+      "mapdfinputbucket0A2E139C",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/ma-pdf-input-bucket/AllowBucketNotificationsToBedrockAgentStackTriggerFunctionD501D037"
+   }
+  },
+  "cdmoutputbucket2A79A394": {
+   "Type": "AWS::S3::Bucket",
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/cdm-output-bucket/Resource"
+   }
+  },
+  "S3TriggerLambdaExecutionRole64E8EBD8": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     },
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/AmazonS3FullAccess"
+       ]
+      ]
+     },
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/CloudWatchLogsFullAccess"
+       ]
+      ]
+     }
+    ],
+    "Policies": [
+     {
+      "PolicyDocument": {
+       "Statement": [
+        {
+         "Action": "bedrock:InvokeAgent",
+         "Effect": "Allow",
+         "Resource": "*"
+        }
+       ],
+       "Version": "2012-10-17"
+      },
+      "PolicyName": "InvokeBedrockAgentPolicy"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/S3TriggerLambdaExecutionRole/Resource"
+   }
+  },
+  "S3TriggerLambdaExecutionRoleDefaultPolicyD7D5038F": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "s3:Abort*",
+        "s3:DeleteObject*",
+        "s3:PutObject",
+        "s3:PutObjectLegalHold",
+        "s3:PutObjectRetention",
+        "s3:PutObjectTagging",
+        "s3:PutObjectVersionTagging"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "cdmoutputbucket2A79A394",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::Join": [
+          "",
+          [
+           {
+            "Fn::GetAtt": [
+             "cdmoutputbucket2A79A394",
+             "Arn"
+            ]
+           },
+           "/*"
+          ]
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "S3TriggerLambdaExecutionRoleDefaultPolicyD7D5038F",
+    "Roles": [
+     {
+      "Ref": "S3TriggerLambdaExecutionRole64E8EBD8"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/S3TriggerLambdaExecutionRole/DefaultPolicy/Resource"
+   }
+  },
+  "MyLayer38944FA5": {
+   "Type": "AWS::Lambda::LayerVersion",
+   "Properties": {
+    "CompatibleRuntimes": [
+     "python3.12"
+    ],
+    "Content": {
+     "S3Bucket": {
+      "Fn::Sub": "isda-cdm-bedrockagent"
+     },
+     "S3Key": "lambdalayer.zip"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/MyLayer/Resource",
+    "aws:asset:path": "asset.b0cf773e1e5a38602ef4149e1081ea57a68926814bc4deafe6e35d56e6850060.zip",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Content"
+   }
+  },
+  "TriggerFunction15E6AA91": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Code": {
+     "S3Bucket": {
+      "Fn::Sub": "isda-cdm-bedrockagent"
+     },
+     "S3Key": "lambdafunctions.zip"
+    },
+    "Environment": {
+     "Variables": {
+      "PDF_BUCKET": {
+       "Ref": "mapdfinputbucket0A2E139C"
+      },
+      "AGENT_ID": {
+       "Ref": "BedrockAgent"
+      },
+      "AGENT_ALIAS_ID": {
+       "Fn::GetAtt": [
+        "MyCfnAgentAlias",
+        "AgentAliasId"
+       ]
+      },
+      "OUTPUT_BUCKET": {
+       "Ref": "cdmoutputbucket2A79A394"
+      }
+     }
+    },
+    "Handler": "trigger_handler.lambda_handler",
+    "Layers": [
+     {
+      "Ref": "MyLayer38944FA5"
+     }
+    ],
+    "MemorySize": 1024,
+    "Role": {
+     "Fn::GetAtt": [
+      "S3TriggerLambdaExecutionRole64E8EBD8",
+      "Arn"
+     ]
+    },
+    "Runtime": "python3.12",
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "S3TriggerLambdaExecutionRoleDefaultPolicyD7D5038F",
+    "S3TriggerLambdaExecutionRole64E8EBD8"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/TriggerFunction/Resource",
+    "aws:asset:path": "asset.ff001abd9a058deb2e509df45f157f0bcf6880fb1034a6a2e8928aba2d272518",
+    "aws:asset:is-bundled": false,
+    "aws:asset:property": "Code"
+   }
+  },
+  "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/Resource"
+   }
+  },
+  "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": "s3:PutBucketNotification",
+       "Effect": "Allow",
+       "Resource": "*"
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36",
+    "Roles": [
+     {
+      "Ref": "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Role/DefaultPolicy/Resource"
+   }
+  },
+  "BucketNotificationsHandler050a0587b7544547bf325f094a3db8347ECC3691": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Description": "AWS CloudFormation handler for \"Custom::S3BucketNotifications\" resources (@aws-cdk/aws-s3)",
+    "Code": {
+     "ZipFile": "import boto3  # type: ignore\nimport json\nimport logging\nimport urllib.request\n\ns3 = boto3.client(\"s3\")\n\nEVENTBRIDGE_CONFIGURATION = 'EventBridgeConfiguration'\nCONFIGURATION_TYPES = [\"TopicConfigurations\", \"QueueConfigurations\", \"LambdaFunctionConfigurations\"]\n\ndef handler(event: dict, context):\n  response_status = \"SUCCESS\"\n  error_message = \"\"\n  try:\n    props = event[\"ResourceProperties\"]\n    notification_configuration = props[\"NotificationConfiguration\"]\n    managed = props.get('Managed', 'true').lower() == 'true'\n    stack_id = event['StackId']\n    old = event.get(\"OldResourceProperties\", {}).get(\"NotificationConfiguration\", {})\n    if managed:\n      config = handle_managed(event[\"RequestType\"], notification_configuration)\n    else:\n      config = handle_unmanaged(props[\"BucketName\"], stack_id, event[\"RequestType\"], notification_configuration, old)\n    s3.put_bucket_notification_configuration(Bucket=props[\"BucketName\"], NotificationConfiguration=config)\n  except Exception as e:\n    logging.exception(\"Failed to put bucket notification configuration\")\n    response_status = \"FAILED\"\n    error_message = f\"Error: {str(e)}. \"\n  finally:\n    submit_response(event, context, response_status, error_message)\n\ndef handle_managed(request_type, notification_configuration):\n  if request_type == 'Delete':\n    return {}\n  return notification_configuration\n\ndef handle_unmanaged(bucket, stack_id, request_type, notification_configuration, old):\n  def get_id(n):\n    n['Id'] = ''\n    strToHash=json.dumps(n, sort_keys=True).replace('\"Name\": \"prefix\"', '\"Name\": \"Prefix\"').replace('\"Name\": \"suffix\"', '\"Name\": \"Suffix\"')\n    return f\"{stack_id}-{hash(strToHash)}\"\n  def with_id(n):\n    n['Id'] = get_id(n)\n    return n\n\n  external_notifications = {}\n  existing_notifications = s3.get_bucket_notification_configuration(Bucket=bucket)\n  for t in CONFIGURATION_TYPES:\n    if request_type == 'Update':\n        old_incoming_ids = [get_id(n) for n in old.get(t, [])]\n        external_notifications[t] = [n for n in existing_notifications.get(t, []) if not get_id(n) in old_incoming_ids]      \n    elif request_type == 'Delete':\n        external_notifications[t] = [n for n in existing_notifications.get(t, []) if not n['Id'].startswith(f\"{stack_id}-\")]\n    elif request_type == 'Create':\n        external_notifications[t] = [n for n in existing_notifications.get(t, [])]\n  if EVENTBRIDGE_CONFIGURATION in existing_notifications:\n    external_notifications[EVENTBRIDGE_CONFIGURATION] = existing_notifications[EVENTBRIDGE_CONFIGURATION]\n\n  if request_type == 'Delete':\n    return external_notifications\n\n  notifications = {}\n  for t in CONFIGURATION_TYPES:\n    external = external_notifications.get(t, [])\n    incoming = [with_id(n) for n in notification_configuration.get(t, [])]\n    notifications[t] = external + incoming\n\n  if EVENTBRIDGE_CONFIGURATION in notification_configuration:\n    notifications[EVENTBRIDGE_CONFIGURATION] = notification_configuration[EVENTBRIDGE_CONFIGURATION]\n  elif EVENTBRIDGE_CONFIGURATION in external_notifications:\n    notifications[EVENTBRIDGE_CONFIGURATION] = external_notifications[EVENTBRIDGE_CONFIGURATION]\n\n  return notifications\n\ndef submit_response(event: dict, context, response_status: str, error_message: str):\n  response_body = json.dumps(\n    {\n      \"Status\": response_status,\n      \"Reason\": f\"{error_message}See the details in CloudWatch Log Stream: {context.log_stream_name}\",\n      \"PhysicalResourceId\": event.get(\"PhysicalResourceId\") or event[\"LogicalResourceId\"],\n      \"StackId\": event[\"StackId\"],\n      \"RequestId\": event[\"RequestId\"],\n      \"LogicalResourceId\": event[\"LogicalResourceId\"],\n      \"NoEcho\": False,\n    }\n  ).encode(\"utf-8\")\n  headers = {\"content-type\": \"\", \"content-length\": str(len(response_body))}\n  try:\n    req = urllib.request.Request(url=event[\"ResponseURL\"], headers=headers, data=response_body, method=\"PUT\")\n    with urllib.request.urlopen(req) as response:\n      print(response.read().decode(\"utf-8\"))\n    print(\"Status code: \" + response.reason)\n  except Exception as e:\n      print(\"send(..) failed executing request.urlopen(..): \" + str(e))"
+    },
+    "Handler": "index.handler",
+    "Role": {
+     "Fn::GetAtt": [
+      "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC",
+      "Arn"
+     ]
+    },
+    "Runtime": "python3.11",
+    "Timeout": 300
+   },
+   "DependsOn": [
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleDefaultPolicy2CF63D36",
+    "BucketNotificationsHandler050a0587b7544547bf325f094a3db834RoleB6FB88EC"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/BucketNotificationsHandler050a0587b7544547bf325f094a3db834/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/02P0WrDMAxFv6XvjtY22wekgT0NFlLYa1EcJVOT2MOyKcHk34edDfp0z+UgIZ3h9HaE4wEfUuh+KmbuIF496knhQ26RcYHY2plUPZicjZ1Zr6nutKkZl65HiO/BaM/WJPfMDbmFRVL7wJXcFzn5U899U1LeUIS8QJVCSQnxEvRE/oJCasc0ttOmOuqd1RPEejDVSCbLDNXMKNumWhIbnCaVN149jmzG/Mu/qAfzGfxPyLO1NT37fEyz+m9rXko4neH1cBfmwgXjeSFo9/wFVYmgsjwBAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "BedrockAgentStack/CDKMetadata/Default"
+   },
+   "Condition": "CDKMetadataAvailable"
+  }
+ },
+ "Outputs": {
+  "TriggerFunctionArn": {
+   "Value": {
+    "Fn::GetAtt": [
+     "TriggerFunction15E6AA91",
+     "Arn"
+    ]
+   }
+  },
+  "PdfBucketName": {
+   "Value": {
+    "Ref": "mapdfinputbucket0A2E139C"
+   }
+  },
+  "OutputBucketName": {
+   "Value": {
+    "Ref": "cdmoutputbucket2A79A394"
+   }
+  },
+  "BedrockAgentArn": {
+   "Value": {
+    "Fn::GetAtt": [
+     "BedrockAgent",
+     "AgentArn"
+    ]
+   }
+  },
+  "BedrockAgentAliasArn": {
+   "Value": {
+    "Fn::GetAtt": [
+     "MyCfnAgentAlias",
+     "AgentAliasArn"
+    ]
+   }
+  }
+ },
+ "Conditions": {
+  "CDKMetadataAvailable": {
+   "Fn::Or": [
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "af-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-northeast-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ap-southeast-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "ca-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "cn-north-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "cn-northwest-1"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-north-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "eu-west-3"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "il-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "me-central-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "me-south-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "sa-east-1"
+       ]
+      }
+     ]
+    },
+    {
+     "Fn::Or": [
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-east-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-east-2"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-west-1"
+       ]
+      },
+      {
+       "Fn::Equals": [
+        {
+         "Ref": "AWS::Region"
+        },
+        "us-west-2"
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

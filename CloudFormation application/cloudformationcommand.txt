@@ -1,0 +1,1 @@
+aws cloudformation create-stack --stack-name CDM-AgentStack --template-url object_url_of_the_template --capabilities CAPABILITY_NAMED_IAM
